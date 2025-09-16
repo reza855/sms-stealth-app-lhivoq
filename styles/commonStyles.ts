@@ -1,14 +1,27 @@
+
 import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
 export const colors = {
-  primary: '#162456',    // Material Blue
-  secondary: '#193cb8',  // Darker Blue
-  accent: '#64B5F6',     // Light Blue
-  background: '#101824',  // Keeping dark background
-  backgroundAlt: '#162133',  // Keeping dark background
-  text: '#e3e3e3',       // Keeping light text
-  grey: '#90CAF9',       // Light Blue Grey
-  card: '#193cb8',       // Keeping dark card background
+  primary: '#2196F3',      // Blue
+  secondary: '#4CAF50',    // Green
+  accent: '#FF9800',       // Orange
+  background: '#F5F5F5',   // Light gray background
+  backgroundAlt: '#FFFFFF', // White
+  text: '#212121',         // Dark text
+  textSecondary: '#757575', // Gray text
+  grey: '#E0E0E0',         // Light gray
+  card: '#FFFFFF',         // White card background
+  success: '#4CAF50',      // Green
+  warning: '#FF9800',      // Orange
+  error: '#F44336',        // Red
+  calculator: {
+    display: '#000000',    // Black display
+    displayText: '#FFFFFF', // White text on display
+    button: '#E0E0E0',     // Light gray buttons
+    buttonText: '#000000', // Black text on buttons
+    operator: '#FF9800',   // Orange operator buttons
+    operatorText: '#FFFFFF', // White text on operator buttons
+  }
 };
 
 export const buttonStyles = StyleSheet.create({
@@ -71,7 +84,7 @@ export const commonStyles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   card: {
-    backgroundColor: colors.backgroundAlt,
+    backgroundColor: colors.card,
     borderColor: colors.grey,
     borderWidth: 1,
     borderRadius: 10,
@@ -84,6 +97,6 @@ export const commonStyles = StyleSheet.create({
   icon: {
     width: 60,
     height: 60,
-    tintColor: "white",
+    tintColor: colors.text,
   },
 });
