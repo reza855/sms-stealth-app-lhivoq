@@ -149,15 +149,14 @@ export default function Calculator({ onSecretCode }: CalculatorProps) {
 
         <View style={styles.row}>
           {renderButton('1', () => inputNumber('1'))}
-          {renderButton('9', () => inputNumber('9'))}
-          {renderButton('7', () => inputNumber('7'))}
+          {renderButton('2', () => inputNumber('2'))}
+          {renderButton('3', () => inputNumber('3'))}
           {renderButton('+', () => inputOperation('+'), styles.operatorButton)}
         </View>
 
         <View style={styles.row}>
           {renderButton('0', () => inputNumber('0'), styles.zeroButton)}
           {renderButton('.', () => {})}
-          {renderButton('8', () => inputNumber('8'))}
           {renderButton('=', performCalculation, styles.operatorButton)}
         </View>
       </View>
