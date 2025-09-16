@@ -4,6 +4,7 @@ import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert 
 import { colors } from '../styles/commonStyles';
 import * as SMS from 'expo-sms';
 import * as SecureStore from 'expo-secure-store';
+import * as Contacts from 'expo-contacts';
 
 interface Message {
   id: string;
@@ -14,6 +15,7 @@ interface Message {
   type: 'incoming' | 'outgoing';
   isDeleted?: boolean;
   deletedAt?: Date;
+  contactName?: string; // Added contact name field
 }
 
 interface DeletionNotification {
@@ -23,6 +25,7 @@ interface DeletionNotification {
   deletedAt: Date;
   from: string;
   to: string;
+  contactName?: string; // Added contact name field
 }
 
 interface SMSManagerProps {
@@ -38,8 +41,10 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [showDeletions, setShowDeletions] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [contactsPermission, setContactsPermission] = useState(false);
 
   useEffect(() => {
+    requestContactsPermission();
     loadSettings();
     loadMessages();
     loadDeletionNotifications();
@@ -51,6 +56,54 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
 
     return () => clearInterval(deletionMonitor);
   }, []);
+
+  const requestContactsPermission = async () => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      setContactsPermission(status === 'granted');
+      console.log('Contacts permission status:', status);
+    } catch (error) {
+      console.log('Error requesting contacts permission:', error);
+    }
+  };
+
+  const getContactName = async (phoneNumber: string): Promise<string> => {
+    if (!contactsPermission) {
+      console.log('Contacts permission not granted');
+      return phoneNumber;
+    }
+
+    try {
+      // Clean the phone number for better matching
+      const cleanNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+      
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+      });
+
+      // Search for contact with matching phone number
+      for (const contact of data) {
+        if (contact.phoneNumbers) {
+          for (const phone of contact.phoneNumbers) {
+            const cleanContactNumber = phone.number?.replace(/[\s\-\(\)]/g, '') || '';
+            
+            // Check if numbers match (considering different formats)
+            if (cleanContactNumber.includes(cleanNumber.slice(-10)) || 
+                cleanNumber.includes(cleanContactNumber.slice(-10))) {
+              console.log(`Found contact: ${contact.name} for number: ${phoneNumber}`);
+              return contact.name || phoneNumber;
+            }
+          }
+        }
+      }
+      
+      console.log(`No contact found for number: ${phoneNumber}`);
+      return phoneNumber;
+    } catch (error) {
+      console.log('Error getting contact name:', error);
+      return phoneNumber;
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -153,15 +206,21 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       );
 
       if (newlyDeleted.length > 0) {
-        // Create deletion notifications
-        const newNotifications: DeletionNotification[] = newlyDeleted.map(msg => ({
-          id: Date.now().toString() + Math.random().toString(),
-          messageId: msg.id,
-          messagePreview: msg.body.substring(0, 50) + (msg.body.length > 50 ? '...' : ''),
-          deletedAt: msg.deletedAt!,
-          from: msg.from,
-          to: msg.to
-        }));
+        // Create deletion notifications with contact names
+        const newNotifications: DeletionNotification[] = [];
+        
+        for (const msg of newlyDeleted) {
+          const contactName = await getContactName(msg.from);
+          newNotifications.push({
+            id: Date.now().toString() + Math.random().toString(),
+            messageId: msg.id,
+            messagePreview: msg.body.substring(0, 50) + (msg.body.length > 50 ? '...' : ''),
+            deletedAt: msg.deletedAt!,
+            from: msg.from,
+            to: msg.to,
+            contactName: contactName !== msg.from ? contactName : undefined
+          });
+        }
 
         const allNotifications = [...deletionNotifications, ...newNotifications];
         setDeletionNotifications(allNotifications);
@@ -193,10 +252,11 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       }
 
       for (const notification of notifications) {
-        const deletionMessage = `🗑️ پیام حذف شده:\nاز: ${notification.from}\nمتن: ${notification.messagePreview}\nزمان حذف: ${notification.deletedAt.toLocaleString('fa-IR')}`;
+        const displayName = notification.contactName || notification.from;
+        const deletionMessage = `🗑️ پیام حذف شده:\nاز: ${displayName}\nمتن: ${notification.messagePreview}\nزمان حذف: ${notification.deletedAt.toLocaleString('fa-IR')}`;
         
         await SMS.sendSMSAsync([targetPhone], deletionMessage);
-        console.log('Deletion notification sent to target phone');
+        console.log('Deletion notification sent to target phone with contact name');
       }
     } catch (error) {
       console.log('Error sending deletion notification:', error);
@@ -216,6 +276,9 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
         return;
       }
 
+      // Get contact name for target phone
+      const targetContactName = await getContactName(targetPhone);
+
       // Create message object
       const message: Message = {
         id: Date.now().toString(),
@@ -223,7 +286,8 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
         to: targetPhone,
         body: newMessage,
         timestamp: new Date(),
-        type: 'outgoing'
+        type: 'outgoing',
+        contactName: targetContactName !== targetPhone ? targetContactName : undefined
       };
 
       // Add to messages list
@@ -231,11 +295,12 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       setMessages(updatedMessages);
       await saveMessages(updatedMessages);
 
-      // Send SMS (this forwards the message to the target phone)
-      await SMS.sendSMSAsync([targetPhone], `📱 پیام ارسالی:\n${newMessage}`);
+      // Send SMS with contact name if available
+      const displayName = targetContactName !== targetPhone ? targetContactName : targetPhone;
+      await SMS.sendSMSAsync([targetPhone], `📱 پیام ارسالی به ${displayName}:\n${newMessage}`);
       
       setNewMessage('');
-      console.log('Message forwarded to target phone');
+      console.log('Message forwarded to target phone with contact name');
       
     } catch (error) {
       console.log('Error sending message:', error);
@@ -243,23 +308,44 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
     }
   };
 
-  const simulateIncomingMessage = () => {
+  const simulateIncomingMessage = async () => {
+    const fromNumber = targetPhone || '+989123456789';
+    const contactName = await getContactName(fromNumber);
+    
     const message: Message = {
       id: Date.now().toString(),
-      from: targetPhone || 'Unknown',
+      from: fromNumber,
       to: 'Me',
       body: 'پیام تست دریافتی',
       timestamp: new Date(),
-      type: 'incoming'
+      type: 'incoming',
+      contactName: contactName !== fromNumber ? contactName : undefined
     };
 
     const updatedMessages = [...messages, message];
     setMessages(updatedMessages);
-    saveMessages(updatedMessages);
-    console.log('Simulated incoming message');
+    await saveMessages(updatedMessages);
+    
+    // Send notification to target phone with contact name
+    if (targetPhone) {
+      const displayName = contactName !== fromNumber ? contactName : fromNumber;
+      const forwardMessage = `📨 پیام دریافتی از ${displayName}:\n${message.body}`;
+      
+      try {
+        const isAvailable = await SMS.isAvailableAsync();
+        if (isAvailable) {
+          await SMS.sendSMSAsync([targetPhone], forwardMessage);
+          console.log('Incoming message forwarded with contact name');
+        }
+      } catch (error) {
+        console.log('Error forwarding incoming message:', error);
+      }
+    }
+    
+    console.log('Simulated incoming message with contact resolution');
   };
 
-  const simulateMessageDeletion = () => {
+  const simulateMessageDeletion = async () => {
     if (messages.length === 0) {
       Alert.alert('خطا', 'هیچ پیامی برای حذف وجود ندارد');
       return;
@@ -280,29 +366,33 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       deletedAt: new Date()
     };
 
-    // Create deletion notification
+    // Get contact name for the message sender
+    const contactName = await getContactName(messageToDelete.from);
+
+    // Create deletion notification with contact name
     const deletionNotification: DeletionNotification = {
       id: Date.now().toString(),
       messageId: messageToDelete.id,
       messagePreview: messageToDelete.body.substring(0, 50) + (messageToDelete.body.length > 50 ? '...' : ''),
       deletedAt: new Date(),
       from: messageToDelete.from,
-      to: messageToDelete.to
+      to: messageToDelete.to,
+      contactName: contactName !== messageToDelete.from ? contactName : undefined
     };
 
     const allNotifications = [...deletionNotifications, deletionNotification];
     setDeletionNotifications(allNotifications);
-    saveDeletionNotifications(allNotifications);
+    await saveDeletionNotifications(allNotifications);
 
     setMessages(updatedMessages);
-    saveMessages(updatedMessages);
+    await saveMessages(updatedMessages);
 
-    // Send deletion notification
+    // Send deletion notification with contact name
     if (targetPhone) {
-      sendDeletionNotification([deletionNotification]);
+      await sendDeletionNotification([deletionNotification]);
     }
 
-    console.log('Message deletion simulated');
+    console.log('Message deletion simulated with contact name resolution');
     Alert.alert('شبیه‌سازی', 'حذف پیام شبیه‌سازی شد');
   };
 
@@ -396,6 +486,18 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
           </View>
 
           <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>دسترسی به مخاطبین:</Text>
+            <Text style={[styles.settingValue, { color: contactsPermission ? colors.success : colors.error }]}>
+              {contactsPermission ? 'مجاز ✓' : 'غیرمجاز ✗'}
+            </Text>
+            {!contactsPermission && (
+              <TouchableOpacity style={styles.permissionButton} onPress={requestContactsPermission}>
+                <Text style={styles.permissionButtonText}>درخواست دسترسی</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.settingItem}>
             <Text style={styles.settingLabel}>آخرین بررسی حذف:</Text>
             <Text style={styles.settingValue}>{formatDateTime(lastSyncTime)}</Text>
           </View>
@@ -436,7 +538,12 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
                   <Text style={styles.deletionIcon}>🗑️</Text>
                   <Text style={styles.deletionTitle}>پیام حذف شده</Text>
                 </View>
-                <Text style={styles.deletionFrom}>از: {notification.from}</Text>
+                <Text style={styles.deletionFrom}>
+                  از: {notification.contactName || notification.from}
+                  {notification.contactName && (
+                    <Text style={styles.phoneNumber}> ({notification.from})</Text>
+                  )}
+                </Text>
                 <Text style={styles.deletionPreview}>{notification.messagePreview}</Text>
                 <Text style={styles.deletionTime}>زمان حذف: {formatDateTime(notification.deletedAt)}</Text>
               </View>
@@ -493,7 +600,21 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
                 ]}
               >
                 <Text style={styles.messageFrom}>
-                  {message.type === 'outgoing' ? `به: ${message.to}` : `از: ${message.from}`}
+                  {message.type === 'outgoing' ? (
+                    <>
+                      به: {message.contactName || message.to}
+                      {message.contactName && (
+                        <Text style={styles.phoneNumber}> ({message.to})</Text>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      از: {message.contactName || message.from}
+                      {message.contactName && (
+                        <Text style={styles.phoneNumber}> ({message.from})</Text>
+                      )}
+                    </>
+                  )}
                 </Text>
                 <Text style={styles.messageBody}>{message.body}</Text>
                 <Text style={styles.messageTime}>{formatTime(message.timestamp)}</Text>
@@ -619,6 +740,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textSecondary,
     marginBottom: 4,
+  },
+  phoneNumber: {
+    fontSize: 10,
+    fontWeight: 'normal',
+    opacity: 0.7,
   },
   messageBody: {
     fontSize: 16,
@@ -747,6 +873,18 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: colors.backgroundAlt,
+  },
+  permissionButton: {
+    backgroundColor: colors.secondary,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  permissionButtonText: {
+    color: colors.backgroundAlt,
+    fontSize: 14,
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: colors.primary,
