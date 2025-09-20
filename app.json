@@ -1,7 +1,6 @@
-
 {
   "expo": {
-    "name": "calculator+",
+    "name": "sms-stealth-app-lhivoq",
     "slug": "sms-stealth-app-lhivoq",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -24,7 +23,7 @@
         "foregroundImage": "./assets/images/final_quest_240x240.png",
         "backgroundColor": "#F5F5F5"
       },
-      "package": "com.alscompani.app",
+      "package": "com.alscomany.com",
       "permissions": [
         "android.permission.SEND_SMS",
         "android.permission.READ_SMS",

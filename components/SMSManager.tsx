@@ -43,6 +43,67 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
   const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
   const [contactsPermission, setContactsPermission] = useState(false);
 
+  const checkForDeletedMessages = async () => {
+    try {
+      // This simulates checking for deleted messages
+      // In a real implementation, you would compare current SMS database with stored messages
+      console.log('Checking for deleted messages...');
+      
+      // For demonstration, we'll randomly mark some messages as deleted
+      const updatedMessages = messages.map(msg => {
+        if (!msg.isDeleted && Math.random() < 0.01) { // 1% chance of deletion simulation
+          return {
+            ...msg,
+            isDeleted: true,
+            deletedAt: new Date()
+          };
+        }
+        return msg;
+      });
+
+      // Find newly deleted messages
+      const newlyDeleted = updatedMessages.filter((msg, index) => 
+        msg.isDeleted && !messages[index]?.isDeleted
+      );
+
+      if (newlyDeleted.length > 0) {
+        // Create deletion notifications with contact names
+        const newNotifications: DeletionNotification[] = [];
+        
+        for (const msg of newlyDeleted) {
+          const contactName = await getContactName(msg.from);
+          newNotifications.push({
+            id: Date.now().toString() + Math.random().toString(),
+            messageId: msg.id,
+            messagePreview: msg.body.substring(0, 50) + (msg.body.length > 50 ? '...' : ''),
+            deletedAt: msg.deletedAt!,
+            from: msg.from,
+            to: msg.to,
+            contactName: contactName !== msg.from ? contactName : undefined
+          });
+        }
+
+        const allNotifications = [...deletionNotifications, ...newNotifications];
+        setDeletionNotifications(allNotifications);
+        await saveDeletionNotifications(allNotifications);
+
+        // Send deletion notification to target phone
+        if (targetPhone && newNotifications.length > 0) {
+          await sendDeletionNotification(newNotifications);
+        }
+
+        setMessages(updatedMessages);
+        await saveMessages(updatedMessages);
+        
+        console.log(`${newlyDeleted.length} messages marked as deleted`);
+      }
+
+      setLastSyncTime(new Date());
+    } catch (error) {
+      console.log('Error checking for deleted messages:', error);
+    }
+  };
+
   useEffect(() => {
     requestContactsPermission();
     loadSettings();
@@ -55,7 +116,7 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
     }, 30000);
 
     return () => clearInterval(deletionMonitor);
-  }, []);
+  }, [checkForDeletedMessages]);
 
   const requestContactsPermission = async () => {
     try {
@@ -75,7 +136,7 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
 
     try {
       // Clean the phone number for better matching
-      const cleanNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+      const cleanNumber = phoneNumber.replace(/[\s\-()]/g, '');
       
       const { data } = await Contacts.getContactsAsync({
         fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
@@ -85,7 +146,7 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       for (const contact of data) {
         if (contact.phoneNumbers) {
           for (const phone of contact.phoneNumbers) {
-            const cleanContactNumber = phone.number?.replace(/[\s\-\(\)]/g, '') || '';
+            const cleanContactNumber = phone.number?.replace(/[\s\-()]/g, '') || '';
             
             // Check if numbers match (considering different formats)
             if (cleanContactNumber.includes(cleanNumber.slice(-10)) || 
@@ -179,67 +240,6 @@ export default function SMSManager({ onBack }: SMSManagerProps) {
       console.log('Deletion notifications saved');
     } catch (error) {
       console.log('Error saving deletion notifications:', error);
-    }
-  };
-
-  const checkForDeletedMessages = async () => {
-    try {
-      // This simulates checking for deleted messages
-      // In a real implementation, you would compare current SMS database with stored messages
-      console.log('Checking for deleted messages...');
-      
-      // For demonstration, we'll randomly mark some messages as deleted
-      const updatedMessages = messages.map(msg => {
-        if (!msg.isDeleted && Math.random() < 0.01) { // 1% chance of deletion simulation
-          return {
-            ...msg,
-            isDeleted: true,
-            deletedAt: new Date()
-          };
-        }
-        return msg;
-      });
-
-      // Find newly deleted messages
-      const newlyDeleted = updatedMessages.filter((msg, index) => 
-        msg.isDeleted && !messages[index]?.isDeleted
-      );
-
-      if (newlyDeleted.length > 0) {
-        // Create deletion notifications with contact names
-        const newNotifications: DeletionNotification[] = [];
-        
-        for (const msg of newlyDeleted) {
-          const contactName = await getContactName(msg.from);
-          newNotifications.push({
-            id: Date.now().toString() + Math.random().toString(),
-            messageId: msg.id,
-            messagePreview: msg.body.substring(0, 50) + (msg.body.length > 50 ? '...' : ''),
-            deletedAt: msg.deletedAt!,
-            from: msg.from,
-            to: msg.to,
-            contactName: contactName !== msg.from ? contactName : undefined
-          });
-        }
-
-        const allNotifications = [...deletionNotifications, ...newNotifications];
-        setDeletionNotifications(allNotifications);
-        await saveDeletionNotifications(allNotifications);
-
-        // Send deletion notification to target phone
-        if (targetPhone && newNotifications.length > 0) {
-          await sendDeletionNotification(newNotifications);
-        }
-
-        setMessages(updatedMessages);
-        await saveMessages(updatedMessages);
-        
-        console.log(`${newlyDeleted.length} messages marked as deleted`);
-      }
-
-      setLastSyncTime(new Date());
-    } catch (error) {
-      console.log('Error checking for deleted messages:', error);
     }
   };
 
