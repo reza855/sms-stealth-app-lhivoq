@@ -2,7 +2,7 @@
 {
   "expo": {
     "name": "calculator+",
-    "slug": "sms-calculator",
+    "slug": "sms-stealth-app-lhivoq",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/final_quest_240x240.png",
@@ -24,12 +24,13 @@
         "foregroundImage": "./assets/images/final_quest_240x240.png",
         "backgroundColor": "#F5F5F5"
       },
-      "package": "com.calculator.sms",
+      "package": "com.alscompani.app",
       "permissions": [
         "android.permission.SEND_SMS",
         "android.permission.READ_SMS",
         "android.permission.RECEIVE_SMS",
-        "android.permission.READ_PHONE_STATE"
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_CONTACTS"
       ]
     },
     "web": {
@@ -37,7 +38,19 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.10",
+            "javaVersion": "VERSION_17"
+          }
+        }
+      ]
     ],
     "scheme": "calculator"
   }
