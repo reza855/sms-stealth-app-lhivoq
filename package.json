@@ -1,5 +1,6 @@
+
 {
-  "name": "sms-stealth-app-lhivoq",
+  "name": "calculator-plus",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
@@ -8,8 +9,12 @@
     "ios": "EXPO_NO_TELEMETRY=1 expo start --ios",
     "web": "EXPO_NO_TELEMETRY=1 expo start --web",
     "build:web": "expo export -p web && npx workbox generateSW workbox-config.js",
-    "build:android": "expo prebuild -p android",
-    "lint": "eslint ."
+    "build:android": "expo prebuild --clean -p android && expo run:android",
+    "prebuild": "expo prebuild --clean",
+    "prebuild:android": "expo prebuild --clean -p android",
+    "prebuild:ios": "expo prebuild --clean -p ios",
+    "lint": "eslint .",
+    "clean": "rm -rf node_modules && rm -rf .expo && rm -rf android && rm -rf ios && npm install"
   },
   "dependencies": {
     "@babel/plugin-proposal-export-namespace-from": "^7.18.9",
@@ -17,6 +22,9 @@
     "@expo/metro-runtime": "~6.1.1",
     "@expo/ngrok": "^4.1.3",
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-community/cli": "^14.1.0",
+    "@react-native-community/cli-platform-android": "^14.1.0",
+    "@react-native-community/cli-tools": "^14.1.0",
     "@react-native-community/datetimepicker": "^8.3.0",
     "@react-navigation/drawer": "^7.1.1",
     "@react-navigation/native": "^7.0.14",
@@ -79,7 +87,8 @@
     "webpack-cli": "^6.0.1"
   },
   "resolutions": {
-    "@expo/prebuild-config": "latest"
+    "@expo/prebuild-config": "latest",
+    "@react-native-community/cli-platform-android": "^14.1.0"
   },
   "private": true
 }
